@@ -1,21 +1,21 @@
 use near_sdk::json_types::U128;
 use near_sdk::serde_json;
+use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{env, Promise, near_bindgen, AccountId, Balance, PanicOnDefault};
-use near_sdk::collections::Map;
+use near_sdk::{env, Promise, near_bindgen, AccountId, PanicOnDefault};
 use near_sdk::collections::UnorderedMap;
-
-near_sdk::setup_alloc!();
+use near_sdk::PromiseOrValue;
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct VotingContract {
-    proposals: Map<u64, Proposal>,
-    votes: Map<(u64, AccountId), u128>,
+    proposals: UnorderedMap<u64, Proposal>,
+    votes: UnorderedMap<(u64, AccountId), u128>,
     token_contract: AccountId,
     proposal_count: u64,
 }
 
+#[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Proposal {
     description: String,
@@ -27,7 +27,16 @@ pub struct Proposal {
     winning_option: Option<String>,
 }
 
+#[near_bindgen]
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+pub struct FtOnTransferMessage {
+    pub proposal_id: u64,
+    pub option_name: String,
+}
 
+#[near_bindgen]
+impl VotingContract{
 pub fn create_proposal(&mut self, description: String, start_time: u64, end_time: u64, options: Vec<String>) {
     let proposal_id = self.proposal_count;
     let mut options_map = UnorderedMap::new(format!("options{}", proposal_id).as_bytes());
@@ -62,7 +71,7 @@ pub fn vote(&self, proposal_id: u64, option_name: String, amount: U128, token_co
                 "msg": msg
             }).to_string().into_bytes(),
             1, // Attaching 1 yoctoNEAR for the call
-            0, // Attached gas (modify as per requirement)
+            near_sdk::Gas(0), // Attached gas (modify as per requirement)
         );
 }
 
@@ -101,13 +110,16 @@ pub fn tally_votes(&mut self, proposal_id: u64) {
     let mut max_votes = 0u128;
     let mut winning_option = None;
 
-    for (option, &votes) in proposal.options.iter() {
+    // Iterate over the options in the proposal
+    for (option, votes) in proposal.options.iter() {
         if votes > max_votes {
             max_votes = votes;
-            winning_option = Some(option);
+            winning_option = Some(option.clone());
         }
     }
 
     proposal.winning_option = winning_option;
     self.proposals.insert(&proposal_id, &proposal);
+}
+
 }
